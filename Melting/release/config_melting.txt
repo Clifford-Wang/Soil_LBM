@@ -1,0 +1,46 @@
+# LBM Melting | native Windows CUDA | D3Q19 MRT / Huang-Wu enthalpy
+# Geometry and temperature data are flat ASCII arrays, one value per voxel.
+# Index convention: x fastest, then y, then z (NumPy reshape(..., order='F')).
+# Relative paths are resolved against this configuration file's directory.
+
+[Data]
+geometry_file = input/soil_sample_1.txt
+temperature_file = input/Temperature.txt
+output_dir = output/soil_sample_1
+
+[Grid]
+nx = 200
+ny = 200
+nz = 200
+gpu_device = 0
+
+[Solver]
+steps = 500000
+log_every = 500
+vtr_every = 5000
+checkpoint_every = 10000
+resume = 1
+
+[Thermal boundary]
+top_temperature = 10.0
+bottom_temperature = -1.0
+# periodic exactly matches the uploaded 2026-11-07 controller's unset x/y
+# face selectors; insulated makes x/y adiabatic and no-slip (alternative case).
+lateral_boundary = periodic
+
+[Enthalpy]
+solidus = -0.1
+liquidus = 0.1
+latent_heat = 320.0
+cp_water = 4.0
+cp_ice = 1.8
+cp_rock = 2.0
+alpha_water = 0.02
+alpha_ice = 0.16
+alpha_rock = 0.24
+
+[Flow]
+viscosity = 0.1
+buoyancy_beta = 0.7
+gravity = 0.00001
+reference_temperature = 0.0

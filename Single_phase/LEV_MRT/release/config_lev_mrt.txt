@@ -1,0 +1,34 @@
+# D3Q19 position-dependent LEV-MRT gas transport; F-order input, x-fastest.
+[PATHS]
+input_file=input/soil_sample.txt
+psi_file=
+output_root=output/LEV_MRT
+
+[GRID]
+nx=200
+ny=200
+nz=200
+voxel_um=9.184
+
+[GAS]
+# psi_file: positive local normalized mean-free-path field, one number/voxel.
+# If empty, psi_uniform is used for the entire sample.
+psi_uniform=0.98
+mean_free_path=0.84688
+diffuse_fraction=0.8909
+acceleration=1.0e-8
+# Reference viscosity for Darcy conversion; adjust from measured gas data.
+reference_nu_lu=0.16667
+# Set nonzero only when an independently known Darcy conversion factor exists.
+permeability_conversion_m2_per_velocity=0
+
+[RUN]
+gpu_device=0
+max_steps=100000
+log_every=2000
+min_steps=10000
+steady_rel_tol=1.0e-5
+steady_consecutive=5
+max_velocity=0.05
+write_vtr=true
+write_xlsx=true

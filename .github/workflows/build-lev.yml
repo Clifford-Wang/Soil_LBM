@@ -1,0 +1,68 @@
+name: Build LEV MRT Native CUDA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.private/lev_mrt/source.enc'
+      - '.github/workflows/build-lev.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install CUDA Toolkit 12.8.1
+        uses: Jimver/cuda-toolkit@v0.2.36
+        with:
+          cuda: '12.8.1'
+          method: 'network'
+          sub-packages: '["nvcc", "cudart", "visual_studio_integration"]'
+          use-github-cache: true
+      - name: Decrypt private LEV MRT CUDA input
+        shell: bash
+        env:
+          SOLUTE_BUILD_KEY: ${{ secrets.SOLUTE_BUILD_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "${SOLUTE_BUILD_KEY:-}"
+          mkdir -p .lev_build
+          if command -v openssl >/dev/null 2>&1; then OPENSSL=openssl;
+          else OPENSSL="/c/Program Files/Git/usr/bin/openssl.exe"; fi
+          "$OPENSSL" enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+            -in .private/lev_mrt/source.enc -out .lev_build/source.tar.gz \
+            -pass env:SOLUTE_BUILD_KEY
+          tar -xzf .lev_build/source.tar.gz -C .lev_build
+          test -s .lev_build/lev.cu
+      - name: Configure native CUDA build
+        shell: pwsh
+        run: cmake -S .lev_build -B build-lev -A x64
+      - name: Run LEV MRT host validation
+        shell: pwsh
+        run: |
+          cmake --build build-lev --config Release --target LBM_LEV_HostValidation --parallel
+          & .\build-lev\Release\LBM_LEV_HostValidation.exe
+      - name: Compile LEV MRT native CUDA EXE
+        shell: pwsh
+        run: |
+          cmake --build build-lev --config Release --target LBM_LEV_MRT --parallel
+          if (!(Test-Path build-lev\Release\LBM_LEV_MRT.exe)) { throw 'LEV MRT EXE was not produced' }
+      - name: Assemble executable-only artifact
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item build-lev\Release\LBM_LEV_MRT.exe dist\
+          Copy-Item Single_phase\LEV_MRT\release\config_lev_mrt.txt dist\
+          Copy-Item Single_phase\LEV_MRT\release\run_lev_mrt.bat dist\
+      - name: Upload LEV MRT release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: LEVMRT-native-release-candidate
+          path: dist/*
+          if-no-files-found: error

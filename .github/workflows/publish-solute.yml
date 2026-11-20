@@ -1,0 +1,55 @@
+name: Publish Solute Transport CUDA EXE
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/publish-solute.yml']
+  workflow_run:
+    workflows: ['Build Solute Transport Native CUDA']
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Successful Windows native CUDA solute build run ID'
+        required: true
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout current main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download successful build artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN: ${{ inputs.run_id || github.event.workflow_run.id || '44771746477' }}
+        run: |
+          set -euo pipefail
+          gh run download "$SOURCE_RUN" --name SoluteLBM-native-release-candidate --dir build-output
+          test -s build-output/LBM_SoluteTransport.exe
+
+      - name: Publish native executable only
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p Solute_transport/release
+          cp build-output/LBM_SoluteTransport.exe Solute_transport/release/LBM_SoluteTransport.exe
+          git config user.name 'Clifford'
+          git config user.email '167417015+Clifford-Wang@users.noreply.github.com'
+          git add Solute_transport/release/LBM_SoluteTransport.exe
+          if git diff --cached --quiet; then
+            echo 'Solute native CUDA executable already published'
+            exit 0
+          fi
+          git commit -m 'Publish native CUDA solute transport executable [skip ci]'
+          git pull --rebase origin main
+          git push origin HEAD:main

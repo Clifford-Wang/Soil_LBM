@@ -1,0 +1,56 @@
+# All model parameters may be changed in this text file.
+# File input: CT .txt values flattened with X-fastest indexing when reshape_order=F.
+case_mode=file_gray
+nx=200
+ny=200
+nz=200
+binary_txt=soil_binary.txt
+grayscale_txt=soil_gray.txt
+psi_txt=
+reshape_order=F
+solid_value=1.0
+bulk_density_g_cm3=1.30
+particle_density_g_cm3=2.65
+gray_pore_reference=auto
+gray_solid_reference=auto
+
+# Material representation: geometric | harmonic | arithmetic
+mixing_law=geometric
+# Liquid state: dry | saturated | uniform | psi
+pore_state=dry
+psi_water_if_greater_than=0.0
+resolved_water_saturation=0.0
+micropore_water_saturation=0.0
+homogeneous_gray_porosity=0.35
+
+# Thermal parameters (SI).
+k_solid_w_mk=2.50
+k_water_w_mk=0.598
+k_air_w_mk=0.026
+rho_solid_kg_m3=2650.0
+cp_solid_j_kgk=800.0
+rho_water_kg_m3=997.0
+cp_water_j_kgk=4182.0
+rho_air_kg_m3=1.204
+cp_air_j_kgk=1006.0
+reference_conductivity_w_mk=-1
+reference_heat_capacity_j_m3k=-1
+
+# Domain, fixed-temperature z boundaries and convergence.
+dx_m=0.000050
+temperature_bottom_c=10.0
+temperature_top_c=30.0
+initial_temperature=linear
+max_iterations=2000000
+check_interval=1000
+temperature_tolerance_c=0.000002
+flux_spread_tolerance=0.0002
+required_stable_checks=3
+
+# Files and diagnostic output.
+vtk_interval=0
+write_final_vtk=true
+write_material_npz=false
+prepare_only=false
+output_dir=results/thermal_gray
+run_name=thermal_gray

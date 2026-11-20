@@ -1,0 +1,74 @@
+name: Build Thermal Conductivity Native CUDA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.private/thermal_conductivity/source.enc'
+      - '.github/workflows/build-thermal.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install CUDA Toolkit 12.8.1
+        uses: Jimver/cuda-toolkit@v0.2.36
+        with:
+          cuda: '12.8.1'
+          method: 'network'
+          sub-packages: '["nvcc", "cudart", "visual_studio_integration"]'
+          use-github-cache: true
+      - name: Decrypt private CUDA build input
+        shell: bash
+        env:
+          SOLUTE_BUILD_KEY: ${{ secrets.SOLUTE_BUILD_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "${SOLUTE_BUILD_KEY:-}"
+          mkdir -p .thermal_build
+          if command -v openssl >/dev/null 2>&1; then OPENSSL=openssl;
+          else OPENSSL="/c/Program Files/Git/usr/bin/openssl.exe"; fi
+          "$OPENSSL" enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+            -in .private/thermal_conductivity/source.enc \
+            -out .thermal_build/source.tar.gz \
+            -pass env:SOLUTE_BUILD_KEY
+          tar -xzf .thermal_build/source.tar.gz -C .thermal_build
+          test -s .thermal_build/thermal.cu
+          test -s .thermal_build/trial_guard.cpp
+      - name: Configure native CUDA build
+        shell: pwsh
+        run: cmake -S .thermal_build -B build-thermal -A x64
+      - name: Validate host-side benchmarks
+        shell: pwsh
+        run: |
+          cmake --build build-thermal --config Release --target LBM_Thermal_HostValidation --parallel
+          & .\build-thermal\Release\LBM_Thermal_HostValidation.exe
+      - name: Compile native CUDA EXE
+        shell: pwsh
+        run: |
+          cmake --build build-thermal --config Release --target LBM_ThermalConductivity --parallel
+          if (!(Test-Path build-thermal\Release\LBM_ThermalConductivity.exe)) {
+            throw 'Thermal native CUDA EXE was not produced.'
+          }
+      - name: Assemble executable-only artifact
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item build-thermal\Release\LBM_ThermalConductivity.exe dist\
+          Copy-Item Thermal_conductivity\release\config_thermal.txt dist\
+          Copy-Item Thermal_conductivity\release\run_thermal.bat dist\
+          Copy-Item Thermal_conductivity\release\batch_cases.csv dist\
+          Copy-Item Thermal_conductivity\release\run_thermal_batch.bat dist\
+      - name: Upload EXE-only release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: ThermalLBM-native-release-candidate
+          path: dist/*
+          if-no-files-found: error

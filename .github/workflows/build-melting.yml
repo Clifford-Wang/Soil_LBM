@@ -1,0 +1,78 @@
+name: Build Melting Native CUDA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.private/melting/source.enc'
+      - '.github/workflows/build-melting.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install CUDA Toolkit 12.8.1
+        uses: Jimver/cuda-toolkit@v0.2.36
+        with:
+          cuda: '12.8.1'
+          method: 'network'
+          sub-packages: '["nvcc", "cudart", "visual_studio_integration"]'
+          use-github-cache: true
+
+      - name: Decrypt private native CUDA inputs
+        shell: bash
+        env:
+          MELTING_SOURCE_KEY: ${{ secrets.SINGLE_PHASE_BUILD_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "${MELTING_SOURCE_KEY:-}"
+          mkdir -p .melting_build
+          if command -v openssl >/dev/null 2>&1; then OPENSSL=openssl;
+          else OPENSSL="/c/Program Files/Git/usr/bin/openssl.exe"; fi
+          "$OPENSSL" enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+            -in .private/melting/source.enc \
+            -out .melting_build/source.tar.gz \
+            -pass env:MELTING_SOURCE_KEY
+          tar -xzf .melting_build/source.tar.gz -C .melting_build
+          test -s .melting_build/sim.cu
+          test -s .melting_build/trial_guard.cpp
+
+      - name: Configure Windows CUDA release
+        shell: pwsh
+        run: cmake -S .melting_build -B build-melting -A x64
+
+      - name: Validate MRT, enthalpy, checkpoint and VTR on host
+        shell: pwsh
+        run: |
+          cmake --build build-melting --config Release --target LBM_Melting_HostValidation --parallel
+          & .\build-melting\Release\LBM_Melting_HostValidation.exe
+
+      - name: Compile native CUDA melting executable
+        shell: pwsh
+        run: |
+          cmake --build build-melting --config Release --target LBM_Melting_MRT --parallel
+          if (!(Test-Path build-melting\Release\LBM_Melting_MRT.exe)) {
+            throw 'Native CUDA melting executable was not produced.'
+          }
+
+      - name: Assemble EXE-only public payload
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item build-melting\Release\LBM_Melting_MRT.exe dist\
+          Copy-Item Melting\release\config_melting.txt dist\
+          Copy-Item Melting\release\run_melting.bat dist\
+
+      - name: Upload release candidate without private source
+        uses: actions/upload-artifact@v4
+        with:
+          name: MeltingLBM-native-release-candidate
+          path: dist/*
+          if-no-files-found: error

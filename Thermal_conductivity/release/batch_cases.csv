@@ -1,0 +1,2 @@
+sample_id,binary_txt,grayscale_txt,bulk_density_g_cm3,psi_txt,pore_state,micropore_water_saturation
+soil_sample_1,soil_sample_1_binary.txt,soil_sample_1_gray.txt,1.30,,dry,0.0

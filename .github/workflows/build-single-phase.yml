@@ -1,0 +1,82 @@
+name: Build Single-Phase Native CUDA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.private/single_phase/source.enc'
+      - '.github/workflows/build-single-phase.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install CUDA Toolkit 12.8.1
+        uses: Jimver/cuda-toolkit@v0.2.36
+        with:
+          cuda: '12.8.1'
+          method: 'network'
+          sub-packages: '["nvcc", "cudart", "visual_studio_integration"]'
+          use-github-cache: true
+
+      - name: Decrypt private single-phase native CUDA build input
+        shell: bash
+        env:
+          SINGLE_PHASE_BUILD_KEY: ${{ secrets.SINGLE_PHASE_BUILD_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "${SINGLE_PHASE_BUILD_KEY:-}"
+          mkdir -p .singlephase_build
+          if command -v openssl >/dev/null 2>&1; then
+            OPENSSL=openssl
+          else
+            OPENSSL="/c/Program Files/Git/usr/bin/openssl.exe"
+          fi
+          "$OPENSSL" enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+            -in .private/single_phase/source.enc \
+            -out .singlephase_build/source.tar.gz \
+            -pass env:SINGLE_PHASE_BUILD_KEY
+          tar -xzf .singlephase_build/source.tar.gz -C .singlephase_build
+          test -s .singlephase_build/main.cu
+          test -s .singlephase_build/trial_guard.cpp
+
+      - name: Configure Windows CUDA release
+        shell: pwsh
+        run: cmake -S .singlephase_build -B build-singlephase -A x64
+
+      - name: Verify host-side MRT operator and output formats
+        shell: pwsh
+        run: |
+          cmake --build build-singlephase --config Release --target LBM_SinglePhase_HostValidation --parallel
+          & .\build-singlephase\Release\LBM_SinglePhase_HostValidation.exe
+
+      - name: Build native CUDA single-phase executable
+        shell: pwsh
+        run: |
+          cmake --build build-singlephase --config Release --target LBM_SinglePhase_MRT --parallel
+          if (!(Test-Path build-singlephase\Release\LBM_SinglePhase_MRT.exe)) {
+            throw 'Native single-phase EXE was not produced.'
+          }
+
+      - name: Prepare executable and configuration package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item build-singlephase\Release\LBM_SinglePhase_MRT.exe dist\
+          Copy-Item Single_phase\release\config_single_phase.txt dist\
+          Copy-Item Single_phase\release\run_single_phase.bat dist\
+
+      - name: Upload private-source-free release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: SinglePhaseLBM-native-release-candidate
+          path: dist/*
+          if-no-files-found: error
+
